@@ -3,28 +3,28 @@ set -euo pipefail
 
 project_dir="$(cd "$(dirname "$0")/.." && pwd)"
 output_dir="${1:-$project_dir/build}"
-app_dir="$output_dir/Microphone Choice.app"
+app_dir="$output_dir/Choice.app"
 resource_dir="$app_dir/Contents/Resources"
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
 
-mkdir -p "$resource_dir" "$app_dir/Contents/MacOS" "$work_dir/MicChoice.iconset"
+mkdir -p "$resource_dir" "$app_dir/Contents/MacOS" "$work_dir/Choice.iconset"
 cp "$project_dir/Assets/Info.plist" "$app_dir/Contents/Info.plist"
 
-source_dir="$project_dir/Sources/MicrophoneChoice"
+source_dir="$project_dir/Sources/Choice"
 stage_dir="$source_dir/StageManagerFill"
 sdk_dir="$(xcrun --sdk macosx --show-sdk-path)"
 for architecture in arm64 x86_64; do
   swiftc -O -target "${architecture}-apple-macos13.0" -sdk "$sdk_dir" \
     "$source_dir"/*.swift "$stage_dir"/*.swift \
     -framework IOBluetooth -framework UserNotifications -framework Carbon -framework ColorSync \
-    -o "$work_dir/MicChoice-$architecture"
+    -o "$work_dir/Choice-$architecture"
 done
-lipo -create "$work_dir/MicChoice-arm64" "$work_dir/MicChoice-x86_64" \
-  -output "$app_dir/Contents/MacOS/MicChoice"
+lipo -create "$work_dir/Choice-arm64" "$work_dir/Choice-x86_64" \
+  -output "$app_dir/Contents/MacOS/Choice"
 
-icon_source="$project_dir/Assets/MicChoice.png"
-iconset_dir="$work_dir/MicChoice.iconset"
+icon_source="$project_dir/Assets/Choice.png"
+iconset_dir="$work_dir/Choice.iconset"
 for size in 16 32 128 256 512; do
   sips -z "$size" "$size" "$icon_source" \
     --out "$iconset_dir/icon_${size}x${size}.png" >/dev/null
@@ -32,8 +32,8 @@ for size in 16 32 128 256 512; do
   sips -z "$double_size" "$double_size" "$icon_source" \
     --out "$iconset_dir/icon_${size}x${size}@2x.png" >/dev/null
 done
-sips -z 1024 1024 "$icon_source" --out "$resource_dir/MicChoice.png" >/dev/null
-iconutil -c icns "$iconset_dir" -o "$resource_dir/MicChoice.icns"
+sips -z 1024 1024 "$icon_source" --out "$resource_dir/Choice.png" >/dev/null
+iconutil -c icns "$iconset_dir" -o "$resource_dir/Choice.icns"
 
 # Developers can supply a Developer ID identity for their own signed builds.
 codesign --force --sign "${CODESIGN_IDENTITY:--}" "$app_dir"
