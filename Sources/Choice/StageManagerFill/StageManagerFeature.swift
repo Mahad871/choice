@@ -25,6 +25,9 @@ final class StageManagerFeature {
     var onMeasurementChange: (() -> Void)?
 
     var interactionStatus: String { interactions.doubleClickStatus }
+    /// True when Fill is blocked only by Accessibility access. The settings say so rather
+    /// than calling the features off.
+    var needsAccessibility: Bool { !preview && !AXIsProcessTrusted() }
 
     init(preferences: StageFillPreferences, preview: Bool = false) {
         self.preferences = preferences

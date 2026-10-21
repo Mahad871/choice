@@ -93,6 +93,8 @@ final class StageWindowInteractions: NSObject {
             swallowedMouseUp = false
             clickSequence = StageClickSequence()
             doubleClickStatus = preview ? "Preview does not intercept clicks or show controls over other apps."
+                : preferences.enabled && preferences.titleBarDoubleClick
+                ? "Waiting for Accessibility access. See Accessibility below."
                 : "Off. Title-bar double-clicks keep the action set in System Settings."
         }
         card.row.setShortcut(shortcutTitle)

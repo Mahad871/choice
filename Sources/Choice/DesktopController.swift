@@ -47,6 +47,8 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
     private let stageHoverSwitch = NSSwitch()
     private let stageDoubleClickSwitch = NSSwitch()
     private let stageInteractionLabel = NSTextField(wrappingLabelWithString: "")
+    private let stageHoverLabel = NSTextField(wrappingLabelWithString: "")
+    private let stageRepairButton = NSButton(title: "Repair Access…", target: nil, action: nil)
     private let stageShortcutSwitch = NSSwitch()
     private let stageModifiers = NSSegmentedControl(labels: ["⌃", "⌥", "⇧", "⌘"],
                                                     trackingMode: .selectAny, target: nil, action: nil)
@@ -400,6 +402,9 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
                                             action: #selector(openAccessibilitySettings))
         let refreshAccess = NSButton(title: "Check access", target: self,
                                      action: #selector(checkStageAccess))
+        stageRepairButton.target = self
+        stageRepairButton.action = #selector(repairAccessibility)
+        stageRepairButton.toolTip = "Clear Choice's Accessibility entry and ask macOS for access again"
         let panel = stack([
             heading("Stage Manager Fill"),
             note("Make a window as large as possible while keeping Stage Manager's recent apps visible."),
@@ -408,7 +413,7 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
             separator(),
             heading("Ways to fill"),
             switchRow(stageHoverSwitch, title: "Add to the green-button menu"),
-            secondary(NSTextField(wrappingLabelWithString: "Hover over a window's green button. Stage Manager Fill appears under Apple's menu.")),
+            secondary(stageHoverLabel),
             switchRow(stageDoubleClickSwitch, title: "Double-click a title bar or tab sidebar"),
             secondary(stageInteractionLabel),
             switchRow(stageShortcutSwitch, title: "Keyboard shortcut"),
@@ -422,7 +427,7 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
             separator(),
             heading("Accessibility"),
             secondary(stagePermissionLabel),
-            stack([accessibilityButton, refreshAccess], vertical: false, spacing: 10),
+            stack([accessibilityButton, refreshAccess, stageRepairButton], vertical: false, spacing: 10),
             separator(),
             stageActionButton,
             secondary(stageResultLabel)
@@ -544,6 +549,10 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
             ? "Stage Manager is hiding recent apps, so no space is kept for them."
             : "Stage Manager shows recent apps on the \(environment.expectedStripSide.rawValue)."
         stageHoverSwitch.state = preferences.greenButtonCompanion ? .on : .off
+        let needsAccess = stageFill.needsAccessibility
+        stageHoverLabel.stringValue = enabled && preferences.greenButtonCompanion && needsAccess
+            ? "Waiting for Accessibility access. See Accessibility below."
+            : "Hover over a window's green button. Stage Manager Fill appears under Apple's menu."
         stageDoubleClickSwitch.state = preferences.titleBarDoubleClick ? .on : .off
         var interaction = stageFill.interactionStatus
         if preferences.titleBarDoubleClick && !environment.titleBarDoubleClickResizes {
@@ -612,9 +621,13 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
         let width = preferences.reservation(for: displayKey ?? "")
         if stageWidthField.currentEditor() == nil { stageWidthField.stringValue = String(width) }
         stageWidthDescription.stringValue = "Keeps \(width) screen points free on the \(environment.expectedStripSide.rawValue), measured from the display's edge. Smaller displays keep a usable window width."
-        stagePermissionLabel.stringValue = AXIsProcessTrusted()
+        stagePermissionLabel.stringValue = !needsAccess
             ? "Access granted. Ready to resize other apps' windows."
-            : "Accessibility access is required to move and resize other apps' windows. Microphone choices continue to work without it."
+            // Builds before 2.0.1 were granted by exact code hash, so their entry still shows
+            // as on after an upgrade while no longer applying. Repair clears it.
+            : "Choice needs Accessibility access to move and resize other apps' windows. Microphone choices continue to work without it.\n\nIf Choice is already on in the list, a permission from an earlier version is in the way. Click Repair Access…, then switch Choice on again."
+        stagePermissionLabel.textColor = needsAccess && enabled ? .systemOrange : .secondaryLabelColor
+        stageRepairButton.isHidden = !needsAccess
     }
 
     private func buildMainMenu() {
@@ -762,7 +775,33 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
         stageFill.refreshInteractions()
         refreshStageFill()
     }
+    /// Clears this app's Accessibility entry, which only the user can switch back on, then
+    /// asks again so macOS records the running build.
+    @objc private func repairAccessibility() {
+        guard let bundleID = Bundle.main.bundleIdentifier else { return }
+        let reset = Process()
+        reset.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        reset.arguments = ["reset", "Accessibility", bundleID]
+        reset.terminationHandler = { [weak self] process in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if process.terminationStatus != 0 {
+                    self.stageResultLabel.stringValue = "Choice could not reset its Accessibility entry. Remove Choice from the list with −, then click Open Accessibility Settings…."
+                    self.stageResultLabel.textColor = .systemRed
+                }
+                self.openAccessibilitySettings()
+            }
+        }
+        do { try reset.run() } catch { openAccessibilitySettings() }
+    }
     @objc private func openAccessibilitySettings() {
+        // Asking through the system prompt lists this exact app in Accessibility settings,
+        // ready to switch on. An entry added with + can belong to another copy or build.
+        let prompt = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        if AXIsProcessTrustedWithOptions([prompt: true] as CFDictionary) {
+            stageFill.refreshInteractions()
+            refreshStageFill()
+        }
         let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
         if !NSWorkspace.shared.open(url) {
             NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/System Settings.app"))

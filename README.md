@@ -57,7 +57,7 @@ brew install Mahad871/tap/choice
 brew services start choice
 ```
 
-Homebrew may migrate the old formula for you during `brew update` or `brew upgrade`. If `brew services list` still shows `microphone-choice`, run `brew services stop microphone-choice` and `brew uninstall microphone-choice`. If you downloaded the app, quit Microphone Choice, delete it from Applications, and open Choice. macOS treats the renamed app as new for Accessibility, so grant it again if you use Stage Manager Fill.
+Homebrew may migrate the old formula for you during `brew update` or `brew upgrade`. If `brew services list` still shows `microphone-choice`, run `brew services stop microphone-choice` and `brew uninstall microphone-choice`. If you downloaded the app, quit Microphone Choice, delete it from Applications, and open Choice. If you use Stage Manager Fill, Accessibility may still show Choice switched on with a permission that belonged to the old version. Open **Stage Manager Fill** settings and click **Repair Access…**, then switch Choice on again. This is needed once: from 2.0.1, the permission carries over to later upgrades.
 
 ## Menu bar and settings
 
@@ -80,7 +80,7 @@ Stage Manager Fill moves only that app's standard window. It chooses the display
 
 Restore positions are remembered separately for up to 128 windows during the current app session. A manual move or resize becomes the starting position for the next fill. The green-button menu and menu bar actions always fill; a later double-click or shortcut can restore their saved position. A restore is refused if its old title bar is no longer reachable on a connected display.
 
-Stage Manager Fill requires **Accessibility** access to read and resize other apps' windows and to recognize what was double-clicked. Its settings show the current access status and include **Open Accessibility Settings…**. The app does not request this access at launch or use it for microphone selection. macOS may require you to grant access again after replacing or rebuilding the app.
+Stage Manager Fill requires **Accessibility** access to read and resize other apps' windows and to recognize what was double-clicked. Its settings show the current access status. **Open Accessibility Settings…** asks macOS for access, which lists Choice in **Privacy & Security → Accessibility** for you to switch on. If Choice already appears switched on but the settings say access is missing, an older version's permission is in the way; **Repair Access…** clears it and asks again. The app does not request this access at launch or use it for microphone selection. Homebrew upgrades keep the permission (see [Build from source](#build-from-source)).
 
 | Setting | What it does |
 | --- | --- |
@@ -119,7 +119,7 @@ cd choice
 ./scripts/package-release.sh
 ```
 
-The universal app and ZIP appear in `build/`. The build script compiles both Apple silicon and Intel binaries, generates all macOS icon sizes from the approved artwork, and ad hoc signs the app. Run `build/Choice.app/Contents/MacOS/Choice --probe` to list connected Bluetooth microphones without starting the monitor. `--probe-inputs` lists all microphone names and transports. `--test-prompt` shows a diagnostic dialog and closes it after eight seconds without changing audio or choices.
+The universal app and ZIP appear in `build/`. The build script compiles both Apple silicon and Intel binaries, generates all macOS icon sizes from the approved artwork, and ad hoc signs the app. Ad hoc builds are signed to be recognized by their bundle identifier rather than by their exact code, so Accessibility access survives rebuilds and Homebrew upgrades; set `CODESIGN_IDENTITY` to sign with your own Developer ID instead. Run `build/Choice.app/Contents/MacOS/Choice --probe` to list connected Bluetooth microphones without starting the monitor. `--probe-inputs` lists all microphone names and transports. `--test-prompt` shows a diagnostic dialog and closes it after eight seconds without changing audio or choices.
 
 Run `./scripts/test-connection-tracker.sh` for the connection, saved-choice migration, settings, fallback selection, single-instance, diagnostics, and hotkey registration tests. Run `./scripts/test-stage-manager-fill.sh` for window geometry, strip measurement, saved preferences, green-button menu placement, double-click recognition, frame confirmation, and restore policy tests. Developers can open the built executable with `--preview` for a disposable settings session with sample devices and no audio, login-setting, or external-window changes. Use `--preview-light` or `--preview-dark` with it to check both themes. Keyboard shortcuts in a preview still register with macOS until you disable them or quit.
 
