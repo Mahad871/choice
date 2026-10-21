@@ -2,16 +2,16 @@
 set -euo pipefail
 
 project_dir="$(cd "$(dirname "$0")/.." && pwd)"
-test_binary="$(mktemp /tmp/microphone-choice-tracker.XXXXXX)"
+test_binary="$(mktemp /tmp/choice-tracker.XXXXXX)"
 trap 'rm -f "$test_binary"' EXIT
-swiftc "$project_dir/Sources/MicrophoneChoice/ConnectionTracker.swift" \
-  "$project_dir/Sources/MicrophoneChoice/RememberedChoices.swift" \
-  "$project_dir/Sources/MicrophoneChoice/AppSettings.swift" \
-  "$project_dir/Sources/MicrophoneChoice/AudioDevices.swift" \
-  "$project_dir/Sources/MicrophoneChoice/Diagnostics.swift" \
-  "$project_dir/Sources/MicrophoneChoice/SingleInstance.swift" \
-  "$project_dir/Sources/MicrophoneChoice/GlobalShortcut.swift" \
-  "$project_dir/Sources/MicrophoneChoice/LaunchAgentStatus.swift" \
+swiftc "$project_dir/Sources/Choice/ConnectionTracker.swift" \
+  "$project_dir/Sources/Choice/RememberedChoices.swift" \
+  "$project_dir/Sources/Choice/AppSettings.swift" \
+  "$project_dir/Sources/Choice/AudioDevices.swift" \
+  "$project_dir/Sources/Choice/Diagnostics.swift" \
+  "$project_dir/Sources/Choice/SingleInstance.swift" \
+  "$project_dir/Sources/Choice/GlobalShortcut.swift" \
+  "$project_dir/Sources/Choice/LaunchAgentStatus.swift" \
   "$project_dir/Tests/ConnectionTrackerTests.swift" \
   "$project_dir/Tests/RememberedChoicesTests.swift" \
   "$project_dir/Tests/AppSettingsTests.swift" \

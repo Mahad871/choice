@@ -59,7 +59,7 @@ final class ConnectionDiagnostics {
     func report(currentInput: String, preferredInput: String, notificationStatus: String,
                 shortcutStatus: String) -> String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development"
-        var lines = ["Microphone Choice \(version)", "Current input: \(currentInput)",
+        var lines = ["Choice \(version)", "Current input: \(currentInput)",
                      "Preferred input available now: \(preferredInput)",
                      "Notifications: \(notificationStatus)", "Keyboard shortcut: \(shortcutStatus)",
                      "", "Bluetooth microphones"]

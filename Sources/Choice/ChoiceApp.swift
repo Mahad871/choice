@@ -5,10 +5,6 @@ import Foundation
 
 private let audioSystem = AudioObjectID(kAudioObjectSystemObject)
 
-func log(_ message: String) {
-    if let data = "\(Date()): \(message)\n".data(using: .utf8) { FileHandle.standardError.write(data) }
-}
-
 private struct PromptSelection {
     let microphone: MicrophoneChoice
     let remember: Bool
@@ -22,7 +18,7 @@ private func askAbout(name: String, device: InputDevice?, preferred: InputDevice
     }
     let promptScreen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
     let alert = NSAlert()
-    if let iconURL = Bundle.main.url(forResource: "MicChoice", withExtension: "png"),
+    if let iconURL = Bundle.main.url(forResource: "Choice", withExtension: "png"),
        let icon = NSImage(contentsOf: iconURL) { alert.icon = icon }
     if preview {
         alert.messageText = "Test microphone choice"
@@ -55,7 +51,7 @@ private func askAbout(name: String, device: InputDevice?, preferred: InputDevice
     let cancel = alert.addButton(withTitle: "Cancel")
     cancel.keyEquivalent = "\u{1b}"
     alert.alertStyle = .informational
-    alert.window.title = "Microphone Choice"
+    alert.window.title = "Choice"
     alert.window.level = .floating
     alert.window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
     alert.layout()
@@ -347,74 +343,78 @@ final class MicrophoneMonitor {
     }
 }
 
-if CommandLine.arguments.contains("--probe") {
-    for device in bluetoothInputs() { print("\(device.name)\t\(device.uid)") }
-} else if CommandLine.arguments.contains("--probe-inputs") {
-    for device in inputDevices() { print("\(device.displayName)\t\(device.isBluetooth ? "Bluetooth" : "Local")") }
-} else {
-    let preview = CommandLine.arguments.contains("--preview")
-    let testPrompt = CommandLine.arguments.contains("--test-prompt")
-    let instance = preview || testPrompt ? nil : SingleInstance()
-    if let instance, !instance.acquired {
-        DistributedNotificationCenter.default().postNotificationName(showSettingsNotification, object: nil)
-        exit(0)
-    }
-    let suiteName = preview ? "io.github.mahad871.microphonechoice.preview.\(UUID().uuidString)" : nil
-    let defaults = suiteName.flatMap(UserDefaults.init(suiteName:)) ?? .standard
-    let settings = AppSettings(defaults: defaults)
-    let remembered = RememberedChoices(defaults: defaults)
-    if preview {
-        remembered.save(RememberedChoice(microphone: .preferred, deviceName: "Soundcore Life Q30"), for: "preview-a")
-        remembered.save(RememberedChoice(microphone: .bluetooth,
-            deviceName: "A very long Bluetooth conference headset name for layout verification"), for: "preview-b")
-    }
-    let app = NSApplication.shared
-    app.setActivationPolicy(preview ? .regular : .accessory)
-    if preview && CommandLine.arguments.contains("--preview-light") {
-        settings.theme = .light
-    } else if preview && CommandLine.arguments.contains("--preview-dark") {
-        settings.theme = .dark
-    }
-    app.appearance = settings.theme.appearance
-    let notifications = ChoiceNotifications()
-    notifications.enabled = settings.notificationsEnabled
-    if !testPrompt && !preview { notifications.start() }
-    app.finishLaunching()
-    if testPrompt {
-        let device = bluetoothInputs().first
-        _ = askAbout(name: device?.name ?? "Example Bluetooth device", device: device,
-                     preferred: preferredMicrophone(settings.preferredInputUID), preview: true)
+/// Starts the app, or runs a command-line probe. `main.swift` calls this; the
+/// development lab calls it too, so the real app can run under the lab's permissions.
+func choiceMain() {
+    if CommandLine.arguments.contains("--probe") {
+        for device in bluetoothInputs() { print("\(device.name)\t\(device.uid)") }
+    } else if CommandLine.arguments.contains("--probe-inputs") {
+        for device in inputDevices() { print("\(device.displayName)\t\(device.isBluetooth ? "Bluetooth" : "Local")") }
     } else {
-        let login = LoginController(settings: settings,
-            homebrewManaged: CommandLine.arguments.contains("--no-login-item") ||
-                LoginController.existingHomebrewServiceMatchesApp, preview: preview)
-        login.configureInitialLogin()
-        let shortcut = GlobalShortcut()
-        let monitor = MicrophoneMonitor(settings: settings, remembered: remembered,
-                                       notifications: notifications, preview: preview)
-        let stageFill = StageManagerFeature(preferences: StageFillPreferences(defaults: defaults),
-                                            preview: preview)
-        let desktop = DesktopController(monitor: monitor, login: login, shortcut: shortcut,
-                                        stageFill: stageFill)
-        app.delegate = desktop
-        desktop.onTermination = { if let suiteName { defaults.removePersistentDomain(forName: suiteName) } }
-        notifications.onChangeChoice = { [weak monitor] key in monitor?.requestChoice(for: key) }
-        notifications.onStatusChanged = { [weak desktop] in desktop?.refresh() }
-        monitor.onUpdate = { [weak desktop] in desktop?.refresh() }
-        shortcut.onInvoke = { [weak desktop, weak monitor] in
-            monitor?.diagnostics.record("Keyboard shortcut invoked.")
-            desktop?.showChoiceOrSettings()
+        let preview = CommandLine.arguments.contains("--preview")
+        let testPrompt = CommandLine.arguments.contains("--test-prompt")
+        let instance = preview || testPrompt ? nil : SingleInstance()
+        if let instance, !instance.acquired {
+            DistributedNotificationCenter.default().postNotificationName(showSettingsNotification, object: nil)
+            exit(0)
         }
-        if let error = shortcut.configure(settings.shortcut) { monitor.diagnostics.record(error) }
-        monitor.start()
-        desktop.start()
-        _ = DistributedNotificationCenter.default().addObserver(forName: showSettingsNotification,
-            object: nil, queue: .main) { [weak desktop] _ in desktop?.showSettings(tab: 0) }
-        Darwin.signal(SIGUSR1, SIG_IGN)
-        let diagnosticSignal = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
-        diagnosticSignal.setEventHandler { monitor.requestDiagnosticPrompt() }
-        diagnosticSignal.resume()
-        if preview { desktop.showSettings(tab: 0) }
-        withExtendedLifetime((instance, desktop, diagnosticSignal)) { app.run() }
+        let suiteName = preview ? "io.github.mahad871.microphonechoice.preview.\(UUID().uuidString)" : nil
+        let defaults = suiteName.flatMap(UserDefaults.init(suiteName:)) ?? .standard
+        let settings = AppSettings(defaults: defaults)
+        let remembered = RememberedChoices(defaults: defaults)
+        if preview {
+            remembered.save(RememberedChoice(microphone: .preferred, deviceName: "Soundcore Life Q30"), for: "preview-a")
+            remembered.save(RememberedChoice(microphone: .bluetooth,
+                deviceName: "A very long Bluetooth conference headset name for layout verification"), for: "preview-b")
+        }
+        let app = NSApplication.shared
+        app.setActivationPolicy(preview ? .regular : .accessory)
+        if preview && CommandLine.arguments.contains("--preview-light") {
+            settings.theme = .light
+        } else if preview && CommandLine.arguments.contains("--preview-dark") {
+            settings.theme = .dark
+        }
+        app.appearance = settings.theme.appearance
+        let notifications = ChoiceNotifications()
+        notifications.enabled = settings.notificationsEnabled
+        if !testPrompt && !preview { notifications.start() }
+        app.finishLaunching()
+        if testPrompt {
+            let device = bluetoothInputs().first
+            _ = askAbout(name: device?.name ?? "Example Bluetooth device", device: device,
+                         preferred: preferredMicrophone(settings.preferredInputUID), preview: true)
+        } else {
+            let login = LoginController(settings: settings,
+                homebrewManaged: CommandLine.arguments.contains("--no-login-item") ||
+                    LoginController.existingHomebrewServiceMatchesApp, preview: preview)
+            login.configureInitialLogin()
+            let shortcut = GlobalShortcut()
+            let monitor = MicrophoneMonitor(settings: settings, remembered: remembered,
+                                           notifications: notifications, preview: preview)
+            let stageFill = StageManagerFeature(preferences: StageFillPreferences(defaults: defaults),
+                                                preview: preview)
+            let desktop = DesktopController(monitor: monitor, login: login, shortcut: shortcut,
+                                            stageFill: stageFill)
+            app.delegate = desktop
+            desktop.onTermination = { if let suiteName { defaults.removePersistentDomain(forName: suiteName) } }
+            notifications.onChangeChoice = { [weak monitor] key in monitor?.requestChoice(for: key) }
+            notifications.onStatusChanged = { [weak desktop] in desktop?.refresh() }
+            monitor.onUpdate = { [weak desktop] in desktop?.refresh() }
+            shortcut.onInvoke = { [weak desktop, weak monitor] in
+                monitor?.diagnostics.record("Keyboard shortcut invoked.")
+                desktop?.showChoiceOrSettings()
+            }
+            if let error = shortcut.configure(settings.shortcut) { monitor.diagnostics.record(error) }
+            monitor.start()
+            desktop.start()
+            _ = DistributedNotificationCenter.default().addObserver(forName: showSettingsNotification,
+                object: nil, queue: .main) { [weak desktop] _ in desktop?.showSettings(tab: 0) }
+            Darwin.signal(SIGUSR1, SIG_IGN)
+            let diagnosticSignal = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
+            diagnosticSignal.setEventHandler { monitor.requestDiagnosticPrompt() }
+            diagnosticSignal.resume()
+            if preview { desktop.showSettings(tab: 0) }
+            withExtendedLifetime((instance, desktop, diagnosticSignal)) { app.run() }
+        }
     }
 }

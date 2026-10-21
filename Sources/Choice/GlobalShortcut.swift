@@ -7,8 +7,11 @@ final class GlobalShortcut {
     private var handler: EventHandlerRef?
     private var hotKey: EventHotKeyRef?
     private var registeredConfiguration: ShortcutConfiguration?
+    /// Distinguishes this app's shortcuts; each instance handles only its own.
+    private let identifier: UInt32
 
-    init() {
+    init(identifier: UInt32 = 1) {
+        self.identifier = identifier
         var type = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
                                  eventKind: UInt32(kEventHotKeyPressed))
         let result = InstallEventHandler(GetApplicationEventTarget(), { _, event, context in
@@ -20,7 +23,9 @@ final class GlobalShortcut {
                 return OSStatus(eventNotHandledErr)
             }
             let shortcut = Unmanaged<GlobalShortcut>.fromOpaque(context).takeUnretainedValue()
-            guard identifier.id == 1, shortcut.hotKey != nil else { return OSStatus(eventNotHandledErr) }
+            guard identifier.id == shortcut.identifier, shortcut.hotKey != nil else {
+                return OSStatus(eventNotHandledErr)
+            }
             DispatchQueue.main.async { [weak shortcut] in shortcut?.onInvoke?() }
             return noErr
         }, 1, &type, Unmanaged.passUnretained(self).toOpaque(), &handler)
@@ -46,7 +51,7 @@ final class GlobalShortcut {
         if configuration.command { modifiers |= UInt32(cmdKey) }
         var newHotKey: EventHotKeyRef?
         let result = RegisterEventHotKey(ShortcutConfiguration.keyCodes[configuration.key]!, modifiers,
-            EventHotKeyID(signature: 0x4D696343, id: 1), GetApplicationEventTarget(),
+            EventHotKeyID(signature: 0x4D696343, id: identifier), GetApplicationEventTarget(),
             OptionBits(kEventHotKeyExclusive), &newHotKey)
         guard result == noErr else {
             let reason = "That shortcut is unavailable or used by another app. Choose another combination."

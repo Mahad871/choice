@@ -3,23 +3,24 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>Microphone Choice</string>
+	<string>Choice</string>
 	<key>CFBundleExecutable</key>
-	<string>MicChoice</string>
+	<string>Choice</string>
 	<key>CFBundleIconFile</key>
-	<string>MicChoice.icns</string>
+	<string>Choice.icns</string>
+	<!-- Kept from the Microphone Choice releases so saved choices, settings and permissions carry over. -->
 	<key>CFBundleIdentifier</key>
 	<string>io.github.mahad871.microphonechoice</string>
 	<key>CFBundleName</key>
-	<string>Microphone Choice</string>
+	<string>Choice</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.3.0</string>
+	<string>2.0.0</string>
 	<key>CFBundleVersion</key>
-	<string>10</string>
+	<string>11</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Microphone Choice checks when your Bluetooth headset connects so it can offer a microphone choice.</string>
+	<string>Choice checks when your Bluetooth headset connects so it can offer a microphone choice.</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
 	<key>LSUIElement</key>

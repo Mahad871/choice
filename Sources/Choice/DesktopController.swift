@@ -43,21 +43,34 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
     private let undoButton = NSButton(title: "Undo forget", target: nil, action: nil)
     private let reportView = NSTextView()
     private let stageEnableSwitch = NSSwitch()
+    private let stageEnvironmentLabel = NSTextField(wrappingLabelWithString: "")
     private let stageHoverSwitch = NSSwitch()
     private let stageDoubleClickSwitch = NSSwitch()
     private let stageInteractionLabel = NSTextField(wrappingLabelWithString: "")
+    private let stageShortcutSwitch = NSSwitch()
+    private let stageModifiers = NSSegmentedControl(labels: ["⌃", "⌥", "⇧", "⌘"],
+                                                    trackingMode: .selectAny, target: nil, action: nil)
+    private let stageShortcutKey = NSPopUpButton()
+    private let stageShortcutDetail = NSTextField(wrappingLabelWithString: "")
+    private let stageModePopup = NSPopUpButton()
+    private let stageAutomaticLabel = NSTextField(wrappingLabelWithString: "")
+    private let stageMeasureButton = NSButton(title: "Measure again", target: nil, action: nil)
+    private var stageAutomaticGroup = NSStackView()
+    private var stageCustomGroup = NSStackView()
     private let stagePerDisplaySwitch = NSSwitch()
     private let stageDisplayPopup = NSPopUpButton()
     private let stageWidthField = NSTextField()
     private let stageSaveWidthButton = NSButton(title: "Save width", target: nil, action: nil)
     private let stageActionButton = NSButton(title: "Fill last active window", target: nil, action: nil)
     private let stageWidthDescription = NSTextField(wrappingLabelWithString: "")
+    private let stageToast = StageToast()
     private let stagePermissionLabel = NSTextField(wrappingLabelWithString: "")
     private let stageResultLabel = NSTextField(wrappingLabelWithString: "")
     private var inputSignature = ""
     private var savedSignature = ""
     private var displaySignature = ""
     private var shortcutError: String?
+    private var stageShortcutError: String?
 
     init(monitor: MicrophoneMonitor, login: LoginController, shortcut: GlobalShortcut,
          stageFill: StageManagerFeature) {
@@ -69,12 +82,13 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
 
     func start() {
         stageFill.onInteractionResult = { [weak self] outcome in self?.showStageResult(outcome) }
+        stageFill.onMeasurementChange = { [weak self] in self?.refresh() }
         stageFill.startInteractions()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        let icon = NSImage(systemSymbolName: "mic", accessibilityDescription: "Microphone Choice")
+        let icon = NSImage(systemSymbolName: "mic", accessibilityDescription: "Choice")
         icon?.isTemplate = true
         statusItem?.button?.image = icon
-        statusItem?.button?.setAccessibilityLabel("Microphone Choice")
+        statusItem?.button?.setAccessibilityLabel("Choice")
         let menu = NSMenu()
         menu.autoenablesItems = false
         menu.delegate = self
@@ -84,7 +98,7 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
     }
 
     func refresh() {
-        statusItem?.button?.toolTip = "Microphone Choice — \(currentInputDevice()?.displayName ?? "No microphone")"
+        statusItem?.button?.toolTip = "Choice — \(currentInputDevice()?.displayName ?? "No microphone")"
         guard settingsWindow?.isVisible == true else { return }
         refreshGeneral()
         refreshSavedDevices()
@@ -97,8 +111,15 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
         menu.removeAllItems()
         let fill = item("Stage Manager Fill", action: #selector(fillStageManager))
         fill.isEnabled = stageFill.preferences.enabled
-        fill.image = NSImage(systemSymbolName: "rectangle.inset.filled",
+        fill.image = NSImage(systemSymbolName: "squares.leading.rectangle",
                              accessibilityDescription: "Fill beside Stage Manager")
+            ?? NSImage(systemSymbolName: "rectangle.inset.filled", accessibilityDescription: "Fill beside Stage Manager")
+        let fillShortcut = stageFill.preferences.shortcut
+        if fillShortcut.enabled, stageFill.shortcutError == nil, stageFill.preferences.enabled {
+            // Shown for reference; the global shortcut works without the menu.
+            fill.keyEquivalent = fillShortcut.key.lowercased()
+            fill.keyEquivalentModifierMask = fillShortcut.modifierFlags
+        }
         menu.addItem(fill)
         if let appName = stageFill.targetAppName {
             menu.addItem(item("Window from: \(appName)", enabled: false))
@@ -144,7 +165,7 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
         menu.addItem(item("Connection diagnostics…", action: #selector(openDiagnostics)))
         menu.addItem(item("Test popup", action: #selector(testPopup)))
         menu.addItem(.separator())
-        menu.addItem(item("Quit Microphone Choice", action: #selector(quit), key: "q"))
+        menu.addItem(item("Quit Choice", action: #selector(quit), key: "q"))
     }
 
     func showChoiceOrSettings() {
@@ -170,7 +191,7 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
     private func buildSettingsWindow() {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 590),
             styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = "Microphone Choice"
+        window.title = "Choice"
         window.minSize = NSSize(width: 640, height: 590)
         window.isReleasedWhenClosed = false
         window.setFrameAutosaveName("MicrophoneChoiceSettings")
@@ -321,15 +342,38 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
     }
 
     private func makeStagePanel() -> NSView {
-        stageHoverSwitch.target = self
-        stageHoverSwitch.action = #selector(stageInteractionChanged)
-        stageHoverSwitch.setAccessibilityLabel("Show a companion beside the green button")
-        stageDoubleClickSwitch.target = self
-        stageDoubleClickSwitch.action = #selector(stageInteractionChanged)
-        stageDoubleClickSwitch.setAccessibilityLabel("Use Stage Manager Fill on title-bar double-click")
         stageEnableSwitch.target = self
         stageEnableSwitch.action = #selector(stageEnabledChanged)
         stageEnableSwitch.setAccessibilityLabel("Enable Stage Manager Fill")
+        stageHoverSwitch.target = self
+        stageHoverSwitch.action = #selector(stageInteractionChanged)
+        stageHoverSwitch.setAccessibilityLabel("Add Stage Manager Fill under the green-button menu")
+        stageDoubleClickSwitch.target = self
+        stageDoubleClickSwitch.action = #selector(stageInteractionChanged)
+        stageDoubleClickSwitch.setAccessibilityLabel("Double-click a title bar or tab sidebar to fill")
+        stageShortcutSwitch.target = self
+        stageShortcutSwitch.action = #selector(stageShortcutChanged)
+        stageShortcutSwitch.setAccessibilityLabel("Enable Stage Manager Fill keyboard shortcut")
+        stageModifiers.target = self
+        stageModifiers.action = #selector(stageShortcutChanged)
+        stageModifiers.setAccessibilityLabel("Stage Manager Fill shortcut modifiers")
+        for (index, title) in ["Control", "Option", "Shift", "Command"].enumerated() {
+            stageModifiers.setToolTip(title, forSegment: index)
+            stageModifiers.setWidth(48, forSegment: index)
+        }
+        stageShortcutKey.addItems(withTitles: Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ").map(String.init))
+        stageShortcutKey.target = self
+        stageShortcutKey.action = #selector(stageShortcutChanged)
+        stageShortcutKey.setAccessibilityLabel("Stage Manager Fill shortcut key")
+        stageShortcutKey.widthAnchor.constraint(equalToConstant: 68).isActive = true
+        stageModePopup.addItems(withTitles: ["Automatic", "Custom width"])
+        stageModePopup.target = self
+        stageModePopup.action = #selector(stageModeChanged)
+        stageModePopup.setAccessibilityLabel("Space kept for Stage Manager")
+        stageModePopup.widthAnchor.constraint(equalToConstant: 170).isActive = true
+        stageMeasureButton.target = self
+        stageMeasureButton.action = #selector(measureStageStrip)
+        stageMeasureButton.toolTip = "Forget the measured width and measure the strip the next time it is visible"
         stagePerDisplaySwitch.target = self
         stagePerDisplaySwitch.action = #selector(stagePerDisplayChanged)
         stagePerDisplaySwitch.setAccessibilityLabel("Remember a width for each display")
@@ -344,6 +388,12 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
         stageSaveWidthButton.action = #selector(saveStageWidth)
         let widthRow = stack([stageWidthField, NSTextField(labelWithString: "pt"), stageSaveWidthButton],
                              vertical: false, spacing: 10)
+        stageAutomaticGroup = stack([stack([secondary(stageAutomaticLabel), stageMeasureButton],
+                                           vertical: false, spacing: 12)], vertical: true, spacing: 6)
+        stageCustomGroup = stack([
+            switchRow(stagePerDisplaySwitch, title: "Remember a width for each display"),
+            stageDisplayPopup, widthRow, secondary(stageWidthDescription)
+        ], vertical: true, spacing: 8)
         stageActionButton.target = self
         stageActionButton.action = #selector(fillStageManager)
         let accessibilityButton = NSButton(title: "Open Accessibility Settings…", target: self,
@@ -352,19 +402,23 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
                                      action: #selector(checkStageAccess))
         let panel = stack([
             heading("Stage Manager Fill"),
-            note("Fill an app window while leaving space on the left for Stage Manager."),
-            separator(),
+            note("Make a window as large as possible while keeping Stage Manager's recent apps visible."),
             switchRow(stageEnableSwitch, title: "Enable Stage Manager Fill"),
-            switchRow(stageHoverSwitch, title: "Show beside the green button"),
-            secondary(NSTextField(wrappingLabelWithString: "Hover over the green button to reveal a companion action beside it. Apple's menu remains available below.")),
-            switchRow(stageDoubleClickSwitch, title: "Override title-bar double-click"),
-            secondary(stageInteractionLabel),
+            secondary(stageEnvironmentLabel),
             separator(),
-            switchRow(stagePerDisplaySwitch, title: "Remember a width for each display"),
-            stageDisplayPopup,
-            heading("Reserved width"),
-            widthRow,
-            secondary(stageWidthDescription),
+            heading("Ways to fill"),
+            switchRow(stageHoverSwitch, title: "Add to the green-button menu"),
+            secondary(NSTextField(wrappingLabelWithString: "Hover over a window's green button. Stage Manager Fill appears under Apple's menu.")),
+            switchRow(stageDoubleClickSwitch, title: "Double-click a title bar or tab sidebar"),
+            secondary(stageInteractionLabel),
+            switchRow(stageShortcutSwitch, title: "Keyboard shortcut"),
+            stack([stageModifiers, stageShortcutKey], vertical: false, spacing: 8),
+            secondary(stageShortcutDetail),
+            separator(),
+            heading("Space for Stage Manager"),
+            stageModePopup,
+            stageAutomaticGroup,
+            stageCustomGroup,
             separator(),
             heading("Accessibility"),
             secondary(stagePermissionLabel),
@@ -372,7 +426,10 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
             separator(),
             stageActionButton,
             secondary(stageResultLabel)
-        ], vertical: true, spacing: 11)
+        ], vertical: true, spacing: 10)
+        for group in [stageAutomaticGroup, stageCustomGroup] {
+            group.widthAnchor.constraint(equalTo: panel.widthAnchor).isActive = true
+        }
         // Let the last status label take spare space; keep controls at the top
         // on a taller window and allow a compact window to scroll.
         let scroll = NSScrollView()
@@ -388,7 +445,7 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
         NSLayoutConstraint.activate([
             panel.topAnchor.constraint(equalTo: document.topAnchor, constant: 3),
             panel.leadingAnchor.constraint(equalTo: document.leadingAnchor),
-            panel.trailingAnchor.constraint(equalTo: document.trailingAnchor),
+            panel.trailingAnchor.constraint(equalTo: document.trailingAnchor, constant: -12),
             panel.bottomAnchor.constraint(equalTo: document.bottomAnchor)
         ])
         return scroll
@@ -478,14 +535,59 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
 
     private func refreshStageFill() {
         let preferences = stageFill.preferences
-        stageEnableSwitch.state = preferences.enabled ? .on : .off
+        let enabled = preferences.enabled
+        let environment = StageManagerSettings.current()
+        stageEnableSwitch.state = enabled ? .on : .off
+        stageEnvironmentLabel.stringValue = !environment.enabled
+            ? "Stage Manager is off. Fill uses the whole screen, like Apple's Fill, until you turn it on in Control Center."
+            : !environment.showsRecentApps
+            ? "Stage Manager is hiding recent apps, so no space is kept for them."
+            : "Stage Manager shows recent apps on the \(environment.expectedStripSide.rawValue)."
         stageHoverSwitch.state = preferences.greenButtonCompanion ? .on : .off
         stageDoubleClickSwitch.state = preferences.titleBarDoubleClick ? .on : .off
-        stageHoverSwitch.isEnabled = preferences.enabled
-        stageDoubleClickSwitch.isEnabled = preferences.enabled
-        stageInteractionLabel.stringValue = stageFill.interactionStatus
-        stagePerDisplaySwitch.state = preferences.rememberPerDisplay ? .on : .off
+        var interaction = stageFill.interactionStatus
+        if preferences.titleBarDoubleClick && !environment.titleBarDoubleClickResizes {
+            interaction += " Title bars keep macOS's “\(environment.titleBarDoubleClickAction)” action set in Desktop & Dock; sidebars still fill."
+        }
+        stageInteractionLabel.stringValue = interaction
+        for control in [stageHoverSwitch, stageDoubleClickSwitch, stageShortcutSwitch, stageModePopup,
+                        stageActionButton] as [NSControl] {
+            control.isEnabled = enabled
+        }
+
+        let shortcut = preferences.shortcut
+        stageShortcutSwitch.state = shortcut.enabled ? .on : .off
+        for (index, selected) in [shortcut.control, shortcut.option, shortcut.shift, shortcut.command].enumerated() {
+            stageModifiers.setSelected(selected, forSegment: index)
+        }
+        stageModifiers.isEnabled = enabled && shortcut.enabled
+        stageShortcutKey.isEnabled = enabled && shortcut.enabled
+        stageShortcutKey.selectItem(withTitle: shortcut.key)
+        let shortcutProblem = stageShortcutError ?? (shortcut.enabled ? stageFill.shortcutError : nil)
+        stageShortcutDetail.stringValue = shortcutProblem ?? (shortcut.enabled
+            ? "Press \(shortcut.displayName) to fill the active window; press it again to restore."
+            : "Off. Default combination: \(StageFillPreferences.defaultShortcut.displayName).")
+        stageShortcutDetail.textColor = shortcutProblem == nil ? .secondaryLabelColor : .systemRed
+
+        let automatic = preferences.reservationMode == .automatic
+        stageModePopup.selectItem(at: automatic ? 0 : 1)
+        stageAutomaticGroup.isHidden = !automatic
+        stageCustomGroup.isHidden = automatic
         let displays = StageDisplay.connected()
+        stageMeasureButton.isEnabled = enabled && environment.reservesStrip
+        if !environment.reservesStrip {
+            stageAutomaticLabel.stringValue = "Nothing is kept free while Stage Manager's recent apps are hidden."
+        } else {
+            stageAutomaticLabel.stringValue = displays.map { display -> String in
+                let strip = stageFill.strip.measuredOrEstimated(for: display, settings: environment)
+                let width = Int(strip.measurement.extent + StageFillGeometry.stripGap)
+                return strip.measured
+                    ? "\(display.name): \(width) pt, measured from Stage Manager."
+                    : "\(display.name): \(width) pt, estimated until Stage Manager's strip is visible."
+            }.joined(separator: "\n")
+        }
+
+        stagePerDisplaySwitch.state = preferences.rememberPerDisplay ? .on : .off
         let signature = displays.map { "\($0.key):\($0.name):\($0.visibleFrame)" }.joined(separator: "|")
         if signature != displaySignature {
             let previous = stageDisplayPopup.selectedItem?.representedObject as? String
@@ -502,18 +604,17 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
             displaySignature = signature
         }
         stageDisplayPopup.isHidden = !preferences.rememberPerDisplay
-        stageDisplayPopup.isEnabled = preferences.enabled && !displays.isEmpty
-        stageWidthField.isEnabled = preferences.enabled
-        stageSaveWidthButton.isEnabled = preferences.enabled
-        stageActionButton.isEnabled = preferences.enabled
-        stagePerDisplaySwitch.isEnabled = preferences.enabled
+        stageDisplayPopup.isEnabled = enabled && !displays.isEmpty
+        stageWidthField.isEnabled = enabled
+        stageSaveWidthButton.isEnabled = enabled
+        stagePerDisplaySwitch.isEnabled = enabled
         let displayKey = stageDisplayPopup.selectedItem?.representedObject as? String
         let width = preferences.reservation(for: displayKey ?? "")
         if stageWidthField.currentEditor() == nil { stageWidthField.stringValue = String(width) }
-        stageWidthDescription.stringValue = "Leave \(width) screen points on the left. The app clamps this width on smaller displays; screen points adjust to display scaling."
+        stageWidthDescription.stringValue = "Keeps \(width) screen points free on the \(environment.expectedStripSide.rawValue), measured from the display's edge. Smaller displays keep a usable window width."
         stagePermissionLabel.stringValue = AXIsProcessTrusted()
             ? "Access granted. Ready to resize other apps' windows."
-            : "Accessibility access is required to move and resize other apps' windows. Microphone Choice continues to work without it."
+            : "Accessibility access is required to move and resize other apps' windows. Microphone choices continue to work without it."
     }
 
     private func buildMainMenu() {
@@ -522,7 +623,7 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
         let appMenu = NSMenu()
         appMenu.addItem(item("Settings…", action: #selector(openSettings), key: ","))
         appMenu.addItem(.separator())
-        appMenu.addItem(item("Quit Microphone Choice", action: #selector(quit), key: "q"))
+        appMenu.addItem(item("Quit Choice", action: #selector(quit), key: "q"))
         appItem.submenu = appMenu
         menu.addItem(appItem)
         let microphoneItem = NSMenuItem(title: "Microphone", action: nil, keyEquivalent: "")
@@ -602,6 +703,39 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
         stageFill.refreshInteractions()
         refresh()
     }
+    @objc private func stageShortcutChanged() {
+        let config = ShortcutConfiguration(enabled: stageShortcutSwitch.state == .on,
+            control: stageModifiers.isSelected(forSegment: 0), option: stageModifiers.isSelected(forSegment: 1),
+            shift: stageModifiers.isSelected(forSegment: 2), command: stageModifiers.isSelected(forSegment: 3),
+            key: stageShortcutKey.titleOfSelectedItem ?? StageFillPreferences.defaultShortcut.key)
+        if let error = config.validationError {
+            stageShortcutError = error
+        } else if config.enabled, config.matchesKeys(of: monitor.settings.shortcut), monitor.settings.shortcut.enabled {
+            stageShortcutError = "The microphone shortcut already uses \(config.displayName). Choose another combination."
+        } else {
+            let previous = stageFill.preferences.shortcut
+            stageFill.preferences.shortcut = config
+            stageFill.refreshInteractions()
+            stageShortcutError = config.enabled ? stageFill.shortcutError : nil
+            if stageShortcutError != nil {
+                // Keep the shortcut that still works.
+                stageFill.preferences.shortcut = previous
+                stageFill.refreshInteractions()
+            }
+        }
+        refresh()
+    }
+    @objc private func stageModeChanged() {
+        stageFill.preferences.reservationMode = stageModePopup.indexOfSelectedItem == 0 ? .automatic : .custom
+        stageFill.refreshInteractions()
+        refresh()
+    }
+    @objc private func measureStageStrip() {
+        stageFill.strip.reset(displays: StageDisplay.connected())
+        stageResultLabel.stringValue = "Measuring again the next time Stage Manager's recent apps are visible."
+        stageResultLabel.textColor = .secondaryLabelColor
+        refresh()
+    }
     @objc private func stagePerDisplayChanged() {
         stageFill.preferences.rememberPerDisplay = stagePerDisplaySwitch.state == .on
         refresh()
@@ -652,7 +786,11 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
         case .unavailable(let reason):
             stageResultLabel.stringValue = reason
             stageResultLabel.textColor = .systemRed
-            showSettings(tab: 3)
+            // Explain beside the menu bar item rather than open a window over the user's work.
+            if settingsWindow?.isVisible != true, let button = statusItem?.button, let window = button.window {
+                let frame = window.convertToScreen(button.convert(button.bounds, to: nil))
+                stageToast.show(reason, near: CGPoint(x: frame.midX, y: frame.minY - 6))
+            }
         }
     }
     @objc private func usePreferred() { monitor.usePreferredInput() }
@@ -749,5 +887,21 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
             view.trailingAnchor.constraint(equalTo: parent.trailingAnchor, constant: -inset),
             view.bottomAnchor.constraint(equalTo: parent.bottomAnchor, constant: -inset)
         ])
+    }
+}
+
+extension ShortcutConfiguration {
+    var modifierFlags: NSEvent.ModifierFlags {
+        var flags: NSEvent.ModifierFlags = []
+        if control { flags.insert(.control) }
+        if option { flags.insert(.option) }
+        if shift { flags.insert(.shift) }
+        if command { flags.insert(.command) }
+        return flags
+    }
+
+    func matchesKeys(of other: ShortcutConfiguration) -> Bool {
+        key == other.key && control == other.control && option == other.option &&
+            shift == other.shift && command == other.command
     }
 }

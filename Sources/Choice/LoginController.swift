@@ -7,17 +7,23 @@ final class LoginController {
     private let settings: AppSettings
     private let homebrewManaged: Bool
     private let preview: Bool
-    private let serviceLabel = "sh.brew.microphone-choice"
+    /// The formula was renamed from microphone-choice in 2.0; an existing service keeps its label.
+    static let serviceLabels = ["sh.brew.choice", "sh.brew.microphone-choice"]
+    private let serviceLabel = LoginController.matchingServiceLabel ?? serviceLabels[0]
     private var serviceTarget: String { "gui/\(getuid())/\(serviceLabel)" }
 
-    static var existingHomebrewServiceMatchesApp: Bool {
-        let agent = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/LaunchAgents/sh.brew.microphone-choice.plist")
-        guard let data = try? Data(contentsOf: agent),
-              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-              let executable = (plist["ProgramArguments"] as? [String])?.first,
-              let current = Bundle.main.executableURL else { return false }
-        return URL(fileURLWithPath: executable).resolvingSymlinksInPath() == current.resolvingSymlinksInPath()
+    static var existingHomebrewServiceMatchesApp: Bool { matchingServiceLabel != nil }
+
+    private static var matchingServiceLabel: String? {
+        guard let current = Bundle.main.executableURL?.resolvingSymlinksInPath() else { return nil }
+        return serviceLabels.first { label in
+            let agent = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/LaunchAgents/\(label).plist")
+            guard let data = try? Data(contentsOf: agent),
+                  let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+                  let executable = (plist["ProgramArguments"] as? [String])?.first else { return false }
+            return URL(fileURLWithPath: executable).resolvingSymlinksInPath() == current
+        }
     }
 
     init(settings: AppSettings, homebrewManaged: Bool, preview: Bool = false) {
@@ -82,7 +88,7 @@ final class LoginController {
                 let result = launchctl(["bootout", serviceTarget])
                 if result.status != 0 {
                     let alert = NSAlert()
-                    alert.messageText = "Could not quit Microphone Choice"
+                    alert.messageText = "Could not quit Choice"
                     alert.informativeText = "The background service could not be stopped. \(result.output)"
                     alert.runModal()
                     return

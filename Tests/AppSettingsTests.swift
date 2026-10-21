@@ -64,5 +64,17 @@ func checkAppSettings() {
     firstInstance = nil
     let replacement = SingleInstance(directory: lockDirectory)
     assert(replacement.acquired)
+    // A copy from before the rename holds only the legacy lock; the renamed app must not
+    // run beside it, and must release what it acquired when it backs off.
+    let current = lockDirectory.appendingPathComponent("Choice")
+    let legacy = lockDirectory.appendingPathComponent("Microphone Choice")
+    var legacyInstance: SingleInstance? = SingleInstance(directory: legacy)
+    assert(legacyInstance!.acquired)
+    assert(!SingleInstance(directories: [current, legacy]).acquired)
+    legacyInstance = nil
+    let renamed = SingleInstance(directories: [current, legacy])
+    assert(renamed.acquired)
+    assert(!SingleInstance(directory: legacy).acquired)
+    assert(LaunchAgentStatus.isDisabled(in: "\"sh.brew.choice\" => disabled", label: "sh.brew.choice"))
     print("Settings, fallback selection, and diagnostics passed")
 }

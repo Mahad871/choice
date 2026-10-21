@@ -28,7 +28,32 @@ struct StageDisplay {
     }
 }
 
+/// Space kept free beside a filled window, measured from the display's edge.
+struct StageReservation: Equatable {
+    var side: StageStripSide
+    var inset: CGFloat
+
+    static let none = StageReservation(side: .left, inset: 0)
+}
+
+/// Everything needed to place a window, captured on the main thread before a fill.
+struct StageFillLayout {
+    var reservations: [String: StageReservation]
+
+    func reservation(for display: StageDisplay) -> StageReservation {
+        reservations[display.key] ?? .none
+    }
+
+    func target(for display: StageDisplay, primaryTop: CGFloat) -> CGRect {
+        StageFillGeometry.targetFrame(for: display, reservation: reservation(for: display), primaryTop: primaryTop)
+    }
+}
+
 enum StageFillGeometry {
+    /// Space between Stage Manager's thumbnails and a filled window. It matches the
+    /// thumbnails' own inset from the display edge.
+    static let stripGap: CGFloat = 15
+
     static func coversEntireDisplay(_ axWindow: CGRect, display: StageDisplay,
                                     primaryTop: CGFloat) -> Bool {
         // There is no documented cross-app AX full-screen flag. Conservatively
@@ -66,15 +91,24 @@ enum StageFillGeometry {
         return selected
     }
 
-    static func targetFrame(for display: StageDisplay, reservation: Int,
+    /// Returns the AX frame for a filled window: the display's visible area, like
+    /// Apple's Fill (which has no margins), less the reserved space on the strip's side.
+    static func targetFrame(for display: StageDisplay, reservation: StageReservation,
                             primaryTop: CGFloat) -> CGRect {
-        let visible = display.visibleFrame
+        var area = display.visibleFrame
         // Keep a useful window even on a very small display. The real app may
         // impose a larger minimum; the AX readback reports that constraint.
-        let minimumWidth = min(320, floor(visible.width / 2))
-        let left = min(CGFloat(max(0, reservation)), max(0, visible.width - minimumWidth))
-        let appKitTarget = CGRect(x: visible.minX + left, y: visible.minY,
-                                  width: visible.width - left, height: visible.height)
-        return axFrame(fromAppKit: appKitTarget, primaryTop: primaryTop)
+        let minimumWidth = min(320, floor(area.width / 2))
+        let inset = max(0, reservation.inset)
+        switch reservation.side {
+        case .left:
+            let edge = min(max(area.minX, display.frame.minX + inset), area.maxX - minimumWidth)
+            area.size.width = area.maxX - edge
+            area.origin.x = edge
+        case .right:
+            let edge = max(min(area.maxX, display.frame.maxX - inset), area.minX + minimumWidth)
+            area.size.width = edge - area.minX
+        }
+        return axFrame(fromAppKit: area.integral, primaryTop: primaryTop)
     }
 }
